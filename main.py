@@ -207,11 +207,9 @@ def ciclo():
     print(f"Total de produtos já publicados: {len(publicados)}")
 
 
-while True:
+if __name__ == "__main__":
     try:
         ciclo()
     except Exception as erro:
         print("ERRO:", erro)
-
-    print("\nAguardando 5 minutos...")
-    time.sleep(300)
+        raise
