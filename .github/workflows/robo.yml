@@ -31,11 +31,10 @@ jobs:
 
       - name: Executar robo
         env:
-          SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
-          SHOPEE_SECRET: ${{ secrets.SHOPEE_SECRET }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python main.py
+  SHOPEE_APP_ID: ${{ secrets.APP_ID }}
+  SHOPEE_SECRET: ${{ secrets.SECRET }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}        run: python main.py
 
       - name: Salvar produtos publicados
         run: |
