@@ -13,33 +13,67 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 SHOPEE_URL = "https://open-api.affiliate.shopee.com.br/graphql"
+
 ARQUIVO_PUBLICADOS = "publicados.json"
+
+# Quantas páginas serão analisadas por execução
+MAX_PAGINAS_POR_EXECUCAO = 8
+
+# Quantos produtos podem ser publicados por execução
+MAX_PUBLICACOES = 10
 
 
 def carregar_publicados():
     if not os.path.exists(ARQUIVO_PUBLICADOS):
         return set()
+
     try:
         with open(ARQUIVO_PUBLICADOS, "r", encoding="utf-8") as arquivo:
             return set(json.load(arquivo))
-    except:
+    except Exception:
         return set()
 
 
 def salvar_publicados(publicados):
     with open(ARQUIVO_PUBLICADOS, "w", encoding="utf-8") as arquivo:
-        json.dump(list(publicados), arquivo, ensure_ascii=False)
+        json.dump(
+            list(publicados),
+            arquivo,
+            ensure_ascii=False,
+            indent=2
+        )
 
 
 publicados = carregar_publicados()
 
 
+def pagina_inicial():
+
+    # Alterna automaticamente entre blocos de páginas.
+    # Isso evita consultar sempre as mesmas primeiras páginas.
+    minuto_atual = int(time.time() / 300)
+
+    total_paginas_estimadas = 45
+
+    bloco = minuto_atual % total_paginas_estimadas
+
+    return bloco + 1
+
+
 def buscar_ofertas():
 
     todas_ofertas = []
-    pagina = 1
 
-    while True:
+    inicio = pagina_inicial()
+
+    print(f"Página inicial desta execução: {inicio}")
+    print(
+        f"Analisando até {MAX_PAGINAS_POR_EXECUCAO} páginas."
+    )
+
+    for tentativa in range(MAX_PAGINAS_POR_EXECUCAO):
+
+        pagina = ((inicio - 1 + tentativa) % 45) + 1
 
         query = f"""
         {{
@@ -85,7 +119,12 @@ def buscar_ofertas():
         timestamp = str(int(time.time()))
 
         assinatura = hashlib.sha256(
-            (APP_ID + timestamp + body + SECRET).encode("utf-8")
+            (
+                APP_ID
+                + timestamp
+                + body
+                + SECRET
+            ).encode("utf-8")
         ).hexdigest()
 
         headers = {
@@ -97,25 +136,49 @@ def buscar_ofertas():
             )
         }
 
-        resposta = requests.post(
-            SHOPEE_URL,
-            data=body.encode("utf-8"),
-            headers=headers,
-            timeout=30
-        )
+        try:
 
-        resposta.raise_for_status()
+            resposta = requests.post(
+                SHOPEE_URL,
+                data=body.encode("utf-8"),
+                headers=headers,
+                timeout=20
+            )
 
-        dados = resposta.json()
+            resposta.raise_for_status()
+
+            dados = resposta.json()
+
+        except requests.RequestException as erro:
+
+            print(
+                f"Erro ao consultar Shopee na página "
+                f"{pagina}: {erro}"
+            )
+
+            continue
 
         if "errors" in dados:
-            print("Erro da Shopee:")
+
+            print("Erro retornado pela Shopee:")
             print(dados["errors"])
-            break
 
-        resultado = dados["data"]["productOfferV2"]
+            continue
 
-        ofertas = resultado["nodes"]
+        try:
+
+            resultado = dados["data"]["productOfferV2"]
+
+            ofertas = resultado["nodes"]
+
+        except Exception as erro:
+
+            print(
+                f"Resposta inesperada da Shopee "
+                f"na página {pagina}: {erro}"
+            )
+
+            continue
 
         print(
             f"Página {pagina}: "
@@ -124,40 +187,88 @@ def buscar_ofertas():
 
         todas_ofertas.extend(ofertas)
 
-        if not resultado["pageInfo"]["hasNextPage"]:
-            print("Última página alcançada.")
-            break
-
-        pagina += 1
-
-        time.sleep(1)
+        # Pequena pausa para evitar excesso de requisições
+        time.sleep(0.5)
 
     return todas_ofertas
 
+
 def converter_preco(valor):
+
     if valor is None:
         return 0
+
     try:
-        return float(str(valor).replace(",", "."))
-    except:
+        return float(
+            str(valor).replace(",", ".")
+        )
+
+    except Exception:
         return 0
 
 
 def publicar_telegram(produto):
-    produto_id = str(produto.get("itemId"))
 
-    if not produto_id or produto_id == "None" or produto_id in publicados:
+    produto_id = str(
+        produto.get("itemId")
+    )
+
+    if (
+        not produto_id
+        or produto_id == "None"
+        or produto_id in publicados
+    ):
         return False
 
-    nome = produto.get("productName", "Produto")
-    preco = converter_preco(produto.get("priceMin"))
-    preco_max = converter_preco(produto.get("priceMax"))
-    desconto = produto.get("priceDiscountRate", 0)
-    imagem = produto.get("imageUrl")
-    link = produto.get("offerLink") or produto.get("productLink")
+    nome = produto.get(
+        "productName",
+        "Produto"
+    )
+
+    preco = converter_preco(
+        produto.get("priceMin")
+    )
+
+    preco_max = converter_preco(
+        produto.get("priceMax")
+    )
+
+    desconto = produto.get(
+        "priceDiscountRate",
+        0
+    )
+
+    imagem = produto.get(
+        "imageUrl"
+    )
+
+    link = (
+        produto.get("offerLink")
+        or produto.get("productLink")
+    )
 
     if preco <= 0:
-        print(f"Preço não encontrado: {nome}")
+
+        print(
+            f"Preço não encontrado: {nome}"
+        )
+
+        return False
+
+    if not imagem:
+
+        print(
+            f"Imagem não encontrada: {nome}"
+        )
+
+        return False
+
+    if not link:
+
+        print(
+            f"Link não encontrado: {nome}"
+        )
+
         return False
 
     texto = (
@@ -167,49 +278,126 @@ def publicar_telegram(produto):
     )
 
     if preco_max > preco:
-        texto += f"🏷️ Até: R$ {preco_max:.2f}\n"
+
+        texto += (
+            f"🏷️ Até: R$ "
+            f"{preco_max:.2f}\n"
+        )
+
     if desconto:
-        texto += f"🔥 Desconto: {desconto}%\n"
 
-    texto += f"\n🛒 COMPRAR AGORA:\n{link}\n\n⚡ Compra Certa"
+        texto += (
+            f"🔥 Desconto: "
+            f"{desconto}%\n"
+        )
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    resposta = requests.post(
-        url,
-        json={"chat_id": TELEGRAM_CHAT_ID, "photo": imagem, "caption": texto},
-        timeout=30
+    texto += (
+        f"\n🛒 COMPRAR AGORA:\n"
+        f"{link}\n\n"
+        f"⚡ Compra Certa"
     )
-    resposta.raise_for_status()
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TELEGRAM_TOKEN}/sendPhoto"
+    )
+
+    try:
+
+        resposta = requests.post(
+            url,
+            json={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "photo": imagem,
+                "caption": texto
+            },
+            timeout=20
+        )
+
+        resposta.raise_for_status()
+
+    except requests.RequestException as erro:
+
+        print(
+            f"Erro ao publicar no Telegram: "
+            f"{erro}"
+        )
+
+        return False
 
     publicados.add(produto_id)
+
     salvar_publicados(publicados)
-    print(f"Publicado: {nome} | R$ {preco:.2f}")
+
+    print(
+        f"Publicado: {nome} | "
+        f"R$ {preco:.2f}"
+    )
+
     return True
 
 
 def ciclo():
+
     print("\n==============================")
     print("BUSCANDO NOVAS OFERTAS")
     print("==============================")
 
     ofertas = buscar_ofertas()
-    print(f"Ofertas encontradas: {len(ofertas)}")
+
+    print(
+        f"Ofertas encontradas: "
+        f"{len(ofertas)}"
+    )
 
     novas = 0
-    for produto in ofertas:
-        if novas >= 10:
-            break
-        if publicar_telegram(produto):
-            novas += 1
-        time.sleep(2)
 
-    print(f"Novas ofertas publicadas: {novas}")
-    print(f"Total de produtos já publicados: {len(publicados)}")
+    # Primeiro tenta ofertas ainda não publicadas
+    for produto in ofertas:
+
+        if novas >= MAX_PUBLICACOES:
+            break
+
+        produto_id = str(
+            produto.get("itemId")
+        )
+
+        if (
+            not produto_id
+            or produto_id == "None"
+            or produto_id in publicados
+        ):
+            continue
+
+        if publicar_telegram(produto):
+
+            novas += 1
+
+            # Pequena pausa entre publicações
+            time.sleep(1)
+
+    print(
+        f"Novas ofertas publicadas: "
+        f"{novas}"
+    )
+
+    print(
+        f"Total de produtos já publicados: "
+        f"{len(publicados)}"
+    )
 
 
 if __name__ == "__main__":
+
     try:
+
         ciclo()
+
     except Exception as erro:
-        print("ERRO:", erro)
+
+        print(
+            "ERRO:",
+            erro
+        )
+
         raise
