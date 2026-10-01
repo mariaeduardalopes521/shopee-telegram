@@ -1,0 +1,29 @@
+BACKUP - ROBO SHOPEE -> TELEGRAM
+
+Este pacote contém a versão local do robô.
+
+Inclui:
+- main.py
+- requirements.txt
+- .env.example
+- .gitignore
+- publicados.json
+- instruções
+
+SEGURANÇA:
+O backup NÃO contém o Secret da Shopee nem o token do Telegram.
+Eles devem ser colocados em um arquivo .env no novo computador.
+
+PARA RODAR EM OUTRO COMPUTADOR:
+1. Instale Python 3.13 (64-bit).
+2. Extraia o ZIP.
+3. Abra o PowerShell dentro da pasta.
+4. python -m venv .venv
+5. Set-ExecutionPolicy -Scope Process Bypass
+6. .\.venv\Scripts\Activate.ps1
+7. pip install -r requirements.txt
+8. Copie .env.example para .env.
+9. Preencha o .env com suas credenciais.
+10. python main.py
+
+O GitHub Actions será configurado depois, separadamente.
