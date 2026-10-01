@@ -8,9 +8,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: robo-shopee-telegram
+  cancel-in-progress: false
+
 jobs:
   executar-robo:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Baixar projeto
